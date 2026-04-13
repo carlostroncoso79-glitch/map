@@ -12,16 +12,18 @@
         body { 
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: #f5f5f5;
+            overflow: hidden;
         }
         #map { 
-            height: calc(100vh - 140px); 
+            height: calc(100vh - 180px); 
             width: 100%;
             z-index: 1;
+            margin-top: 50px;
         }
         .header {
             background: #0088cc;
             color: white;
-            padding: 12px;
+            padding: 15px;
             text-align: center;
             font-weight: bold;
             font-size: 14px;
@@ -29,16 +31,17 @@
             top: 0;
             width: 100%;
             z-index: 1000;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
         }
         .pin-center {
             position: fixed;
-            top: calc(50% - 80px);
+            top: calc(50% - 40px);
             left: 50%;
             transform: translate(-50%, -50%);
-            font-size: 40px;
+            font-size: 45px;
             z-index: 500;
             pointer-events: none;
-            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+            filter: drop-shadow(0 3px 5px rgba(0,0,0,0.4));
         }
         .controls {
             position: fixed;
@@ -47,22 +50,31 @@
             right: 0;
             background: white;
             padding: 15px;
-            box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+            box-shadow: 0 -3px 10px rgba(0,0,0,0.15);
             z-index: 1000;
         }
         .address-box {
             padding: 12px;
-            background: #f8f9fa;
+            background: #f0f8ff;
             border-radius: 8px;
-            margin-bottom: 10px;
+            margin-bottom: 12px;
             font-size: 13px;
             color: #333;
-            max-height: 60px;
-            overflow: hidden;
+            border-left: 4px solid #0088cc;
+            min-height: 40px;
+            display: flex;
+            align-items: center;
+        }
+        .coords-box {
+            font-size: 11px;
+            color: #666;
+            margin-bottom: 10px;
+            text-align: center;
+            font-family: monospace;
         }
         .btn-confirm {
             width: 100%;
-            padding: 15px;
+            padding: 16px;
             background: #28a745;
             color: white;
             border: none;
@@ -70,97 +82,145 @@
             font-size: 16px;
             font-weight: bold;
             cursor: pointer;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        .btn-confirm:active {
+            background: #218838;
+            transform: translateY(1px);
+        }
+        .loading {
+            color: #0088cc;
+            font-style: italic;
         }
     </style>
 </head>
 <body>
-    <div class="header">📍 Mueve el mapa para seleccionar tu destino</div>
+    <div class="header">📍 Mueve el mapa para seleccionar destino</div>
     
     <div class="pin-center">📍</div>
     <div id="map"></div>
     
     <div class="controls">
-        <div class="address-box" id="address">Cargando...</div>
-        <button class="btn-confirm" onclick="confirmDestination()">
-            ✅ Confirmar destino
+        <div class="address-box" id="address">
+            <span class="loading">📍 Obteniendo dirección...</span>
+        </div>
+        <div class="coords-box" id="coords">Lat: -- | Lng: --</div>
+        <button class="btn-confirm" onclick="confirmarDestino()">
+            ✅ CONFIRMAR DESTINO
         </button>
     </div>
 
     <script>
         // Inicializar Telegram WebApp
-        const tg = window.Telegram.WebApp;
-        tg.expand();
-        tg.ready();
+        let tg;
+        try {
+            tg = window.Telegram.WebApp;
+            tg.expand();
+            tg.ready();
+            console.log('✅ Telegram WebApp inicializado');
+        } catch (e) {
+            console.error('❌ Error inicializando WebApp:', e);
+            alert('Error: Abre desde Telegram');
+        }
         
-        // Obtener parámetros de la URL
+        // Obtener parámetros de URL
         const params = new URLSearchParams(window.location.search);
         const userId = params.get('user_id');
-        const originLat = parseFloat(params.get('origin_lat')) || 19.4326;
-        const originLng = parseFloat(params.get('origin_lng')) || -99.1332;
+        const originLat = parseFloat(params.get('origin_lat')) || 11.247425;
+        const originLng = parseFloat(params.get('origin_lng')) || -74.205316;
 
-        console.log('User ID:', userId); // Debug
+        console.log('📝 Parámetros recibidos:', { userId, originLat, originLng });
+
+        if (!userId) {
+            alert('Error: No se recibió user_id');
+        }
 
         // Inicializar mapa
         const map = L.map('map', { 
             zoomControl: false,
             attributionControl: false 
-        }).setView([originLat, originLng], 15);
+        }).setView([originLat, originLng], 16);
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19
         }).addTo(map);
 
+        // Variables globales
         let currentLat = originLat;
         let currentLng = originLng;
         let currentAddress = 'Ubicación seleccionada';
 
-        // Actualizar dirección al mover
-        async function updateAddress() {
+        // Actualizar dirección y coordenadas
+        async function actualizarDireccion() {
             const center = map.getCenter();
             currentLat = center.lat;
             currentLng = center.lng;
+            
+            // Mostrar coordenadas inmediatamente
+            document.getElementById('coords').textContent = 
+                `Lat: ${currentLat.toFixed(6)} | Lng: ${currentLng.toFixed(6)}`;
+            
+            document.getElementById('address').innerHTML = '<span class="loading">📍 Buscando dirección...</span>';
             
             try {
                 const res = await fetch(
                     `https://nominatim.openstreetmap.org/reverse?format=json&lat=${currentLat}&lon=${currentLng}&zoom=18&addressdetails=1`
                 );
                 const data = await res.json();
+                
                 const addr = data.address;
-                const parts = [];
+                const partes = [];
                 
-                if (addr.road) parts.push(addr.road);
-                if (addr.house_number) parts.push('#' + addr.house_number);
-                if (addr.suburb) parts.push(addr.suburb);
-                if (addr.city) parts.push(addr.city);
+                if (addr.road || addr.pedestrian) partes.push(addr.road || addr.pedestrian);
+                if (addr.house_number) partes.push('#' + addr.house_number);
+                if (addr.suburb || addr.neighbourhood) partes.push(addr.suburb || addr.neighbourhood);
+                if (addr.city || addr.town || addr.village) partes.push(addr.city || addr.town || addr.village);
                 
-                currentAddress = parts.join(', ') || data.display_name || `${currentLat.toFixed(5)}, ${currentLng.toFixed(5)}`;
+                currentAddress = partes.join(', ') || data.display_name || `${currentLat.toFixed(5)}, ${currentLng.toFixed(5)}`;
                 document.getElementById('address').textContent = currentAddress;
                 
             } catch (e) {
+                console.error('Error geocodificación:', e);
                 currentAddress = `${currentLat.toFixed(5)}, ${currentLng.toFixed(5)}`;
                 document.getElementById('address').textContent = currentAddress;
             }
         }
 
-        map.on('moveend', updateAddress);
-        updateAddress();
+        map.on('moveend', actualizarDireccion);
+        
+        // Actualizar al inicio
+        setTimeout(actualizarDireccion, 500);
 
         // FUNCIÓN CRÍTICA: Enviar datos al bot
-        function confirmDestination() {
-            const data = {
+        function confirmarDestino() {
+            console.log('🚀 Confirmando destino...');
+            
+            const datos = {
                 user_id: userId,
                 lat: currentLat,
                 lng: currentLng,
                 address: currentAddress
             };
             
-            console.log('Enviando datos:', data); // Debug
+            console.log('📦 Datos a enviar:', datos);
             
-            // Enviar datos al bot de Telegram
-            tg.sendData(JSON.stringify(data));
+            // Método 1: tg.sendData (principal)
+            try {
+                tg.sendData(JSON.stringify(datos));
+                console.log('✅ tg.sendData ejecutado');
+            } catch (e) {
+                console.error('❌ Error tg.sendData:', e);
+            }
             
-            // Cerrar Web App
-            tg.close();
+            // Método 2: tg.close con delay (respaldo)
+            setTimeout(() => {
+                try {
+                    tg.close();
+                    console.log('✅ WebApp cerrada');
+                } catch (e) {
+                    console.error('❌ Error cerrando:', e);
+                }
+            }, 300);
         }
     </script>
 </body>
