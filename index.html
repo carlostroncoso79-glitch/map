@@ -21,9 +21,10 @@
         .header {
             background: #0088cc;
             color: white;
-            padding: 15px;
+            padding: 12px;
             text-align: center;
             font-weight: bold;
+            font-size: 14px;
             position: fixed;
             top: 0;
             width: 100%;
@@ -31,7 +32,7 @@
         }
         .pin-center {
             position: fixed;
-            top: calc(50% - 70px);
+            top: calc(50% - 80px);
             left: 50%;
             transform: translate(-50%, -50%);
             font-size: 40px;
@@ -49,17 +50,15 @@
             box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
             z-index: 1000;
         }
-        .address {
-            padding: 10px;
-            background: #f0f0f0;
+        .address-box {
+            padding: 12px;
+            background: #f8f9fa;
             border-radius: 8px;
             margin-bottom: 10px;
             font-size: 13px;
             color: #333;
-            max-height: 50px;
+            max-height: 60px;
             overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
         }
         .btn-confirm {
             width: 100%;
@@ -72,40 +71,40 @@
             font-weight: bold;
             cursor: pointer;
         }
-        .btn-confirm:active {
-            background: #218838;
-        }
     </style>
 </head>
 <body>
-    <div class="header">📍 Mueve el mapa para seleccionar destino</div>
+    <div class="header">📍 Mueve el mapa para seleccionar tu destino</div>
     
     <div class="pin-center">📍</div>
     <div id="map"></div>
     
     <div class="controls">
-        <div class="address" id="address">Cargando dirección...</div>
+        <div class="address-box" id="address">Cargando...</div>
         <button class="btn-confirm" onclick="confirmDestination()">
             ✅ Confirmar destino
         </button>
     </div>
 
     <script>
+        // Inicializar Telegram WebApp
         const tg = window.Telegram.WebApp;
         tg.expand();
         tg.ready();
         
-        // Obtener parámetros
+        // Obtener parámetros de la URL
         const params = new URLSearchParams(window.location.search);
         const userId = params.get('user_id');
         const originLat = parseFloat(params.get('origin_lat')) || 19.4326;
         const originLng = parseFloat(params.get('origin_lng')) || -99.1332;
 
-        // Inicializar mapa centrado en origen
+        console.log('User ID:', userId); // Debug
+
+        // Inicializar mapa
         const map = L.map('map', { 
             zoomControl: false,
             attributionControl: false 
-        }).setView([originLat, originLng], 16);
+        }).setView([originLat, originLng], 15);
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19
@@ -113,6 +112,7 @@
 
         let currentLat = originLat;
         let currentLng = originLng;
+        let currentAddress = 'Ubicación seleccionada';
 
         // Actualizar dirección al mover
         async function updateAddress() {
@@ -126,31 +126,40 @@
                 );
                 const data = await res.json();
                 const addr = data.address;
-                const shortAddress = [
-                    addr.road || addr.pedestrian,
-                    addr.house_number,
-                    addr.suburb || addr.neighbourhood,
-                    addr.city || addr.town || addr.village
-                ].filter(Boolean).slice(0, 3).join(', ');
+                const parts = [];
                 
-                document.getElementById('address').textContent = shortAddress || 'Ubicación seleccionada';
+                if (addr.road) parts.push(addr.road);
+                if (addr.house_number) parts.push('#' + addr.house_number);
+                if (addr.suburb) parts.push(addr.suburb);
+                if (addr.city) parts.push(addr.city);
+                
+                currentAddress = parts.join(', ') || data.display_name || `${currentLat.toFixed(5)}, ${currentLng.toFixed(5)}`;
+                document.getElementById('address').textContent = currentAddress;
+                
             } catch (e) {
-                document.getElementById('address').textContent = `${currentLat.toFixed(5)}, ${currentLng.toFixed(5)}`;
+                currentAddress = `${currentLat.toFixed(5)}, ${currentLng.toFixed(5)}`;
+                document.getElementById('address').textContent = currentAddress;
             }
         }
 
         map.on('moveend', updateAddress);
         updateAddress();
 
-        // Confirmar y enviar datos al bot
+        // FUNCIÓN CRÍTICA: Enviar datos al bot
         function confirmDestination() {
             const data = {
                 user_id: userId,
                 lat: currentLat,
-                lng: currentLng
+                lng: currentLng,
+                address: currentAddress
             };
             
+            console.log('Enviando datos:', data); // Debug
+            
+            // Enviar datos al bot de Telegram
             tg.sendData(JSON.stringify(data));
+            
+            // Cerrar Web App
             tg.close();
         }
     </script>
