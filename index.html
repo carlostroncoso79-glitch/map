@@ -15,7 +15,7 @@
             overflow: hidden;
         }
         #map { 
-            height: calc(100vh - 180px); 
+            height: calc(100vh - 200px); 
             width: 100%;
             z-index: 1;
             margin-top: 50px;
@@ -31,17 +31,15 @@
             top: 0;
             width: 100%;
             z-index: 1000;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
         }
         .pin-center {
             position: fixed;
-            top: calc(50% - 40px);
+            top: calc(50% - 50px);
             left: 50%;
             transform: translate(-50%, -50%);
             font-size: 45px;
             z-index: 500;
             pointer-events: none;
-            filter: drop-shadow(0 3px 5px rgba(0,0,0,0.4));
         }
         .controls {
             position: fixed;
@@ -53,24 +51,21 @@
             box-shadow: 0 -3px 10px rgba(0,0,0,0.15);
             z-index: 1000;
         }
-        .address-box {
-            padding: 12px;
+        .info-box {
+            padding: 10px;
             background: #f0f8ff;
             border-radius: 8px;
-            margin-bottom: 12px;
-            font-size: 13px;
-            color: #333;
-            border-left: 4px solid #0088cc;
-            min-height: 40px;
-            display: flex;
-            align-items: center;
-        }
-        .coords-box {
-            font-size: 11px;
-            color: #666;
             margin-bottom: 10px;
-            text-align: center;
+            font-size: 12px;
+            border-left: 4px solid #0088cc;
+        }
+        .coords {
             font-family: monospace;
+            color: #0088cc;
+            font-weight: bold;
+            font-size: 14px;
+            text-align: center;
+            margin-bottom: 10px;
         }
         .btn-confirm {
             width: 100%;
@@ -82,145 +77,108 @@
             font-size: 16px;
             font-weight: bold;
             cursor: pointer;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
         }
-        .btn-confirm:active {
-            background: #218838;
-            transform: translateY(1px);
+        .btn-confirm:disabled {
+            background: #ccc;
         }
         .loading {
             color: #0088cc;
-            font-style: italic;
         }
     </style>
 </head>
 <body>
-    <div class="header">📍 Mueve el mapa para seleccionar destino</div>
+    <div class="header">📍 Selecciona tu destino</div>
     
     <div class="pin-center">📍</div>
     <div id="map"></div>
     
     <div class="controls">
-        <div class="address-box" id="address">
-            <span class="loading">📍 Obteniendo dirección...</span>
+        <div class="info-box" id="address">
+            <span class="loading">Obteniendo dirección...</span>
         </div>
-        <div class="coords-box" id="coords">Lat: -- | Lng: --</div>
-        <button class="btn-confirm" onclick="confirmarDestino()">
-            ✅ CONFIRMAR DESTINO
+        <div class="coords" id="coords">--</div>
+        <button class="btn-confirm" id="btnConfirm" onclick="enviarDestino()">
+            ✅ ENVIAR DESTINO AL BOT
         </button>
     </div>
 
     <script>
         // Inicializar Telegram WebApp
-        let tg;
-        try {
-            tg = window.Telegram.WebApp;
-            tg.expand();
-            tg.ready();
-            console.log('✅ Telegram WebApp inicializado');
-        } catch (e) {
-            console.error('❌ Error inicializando WebApp:', e);
-            alert('Error: Abre desde Telegram');
-        }
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        tg.ready();
         
-        // Obtener parámetros de URL
+        // Obtener parámetros
         const params = new URLSearchParams(window.location.search);
         const userId = params.get('user_id');
         const originLat = parseFloat(params.get('origin_lat')) || 11.247425;
         const originLng = parseFloat(params.get('origin_lng')) || -74.205316;
 
-        console.log('📝 Parámetros recibidos:', { userId, originLat, originLng });
+        console.log('UserID:', userId);
 
-        if (!userId) {
-            alert('Error: No se recibió user_id');
-        }
+        // Mapa
+        const map = L.map('map', { zoomControl: false, attributionControl: false })
+            .setView([originLat, originLng], 16);
 
-        // Inicializar mapa
-        const map = L.map('map', { 
-            zoomControl: false,
-            attributionControl: false 
-        }).setView([originLat, originLng], 16);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
 
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 19
-        }).addTo(map);
-
-        // Variables globales
         let currentLat = originLat;
         let currentLng = originLng;
-        let currentAddress = 'Ubicación seleccionada';
+        let currentAddress = '';
 
-        // Actualizar dirección y coordenadas
-        async function actualizarDireccion() {
+        async function actualizarInfo() {
             const center = map.getCenter();
             currentLat = center.lat;
             currentLng = center.lng;
             
-            // Mostrar coordenadas inmediatamente
             document.getElementById('coords').textContent = 
-                `Lat: ${currentLat.toFixed(6)} | Lng: ${currentLng.toFixed(6)}`;
-            
-            document.getElementById('address').innerHTML = '<span class="loading">📍 Buscando dirección...</span>';
+                `${currentLat.toFixed(6)}, ${currentLng.toFixed(6)}`;
             
             try {
-                const res = await fetch(
-                    `https://nominatim.openstreetmap.org/reverse?format=json&lat=${currentLat}&lon=${currentLng}&zoom=18&addressdetails=1`
-                );
+                const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${currentLat}&lon=${currentLng}&zoom=18`);
                 const data = await res.json();
-                
-                const addr = data.address;
-                const partes = [];
-                
-                if (addr.road || addr.pedestrian) partes.push(addr.road || addr.pedestrian);
-                if (addr.house_number) partes.push('#' + addr.house_number);
-                if (addr.suburb || addr.neighbourhood) partes.push(addr.suburb || addr.neighbourhood);
-                if (addr.city || addr.town || addr.village) partes.push(addr.city || addr.town || addr.village);
-                
-                currentAddress = partes.join(', ') || data.display_name || `${currentLat.toFixed(5)}, ${currentLng.toFixed(5)}`;
-                document.getElementById('address').textContent = currentAddress;
-                
+                currentAddress = data.display_name || 'Ubicación seleccionada';
+                document.getElementById('address').textContent = currentAddress.substring(0, 100) + '...';
             } catch (e) {
-                console.error('Error geocodificación:', e);
                 currentAddress = `${currentLat.toFixed(5)}, ${currentLng.toFixed(5)}`;
                 document.getElementById('address').textContent = currentAddress;
             }
         }
 
-        map.on('moveend', actualizarDireccion);
-        
-        // Actualizar al inicio
-        setTimeout(actualizarDireccion, 500);
+        map.on('moveend', actualizarInfo);
+        setTimeout(actualizarInfo, 500);
 
-        // FUNCIÓN CRÍTICA: Enviar datos al bot
-        function confirmarDestino() {
-            console.log('🚀 Confirmando destino...');
-            
+        // FUNCIÓN CLAVE: Enviar datos al bot
+        function enviarDestino() {
+            const btn = document.getElementById('btnConfirm');
+            btn.disabled = true;
+            btn.textContent = '⏳ Enviando...';
+
             const datos = {
                 user_id: userId,
                 lat: currentLat,
                 lng: currentLng,
                 address: currentAddress
             };
-            
-            console.log('📦 Datos a enviar:', datos);
-            
-            // Método 1: tg.sendData (principal)
+
+            console.log('Enviando:', datos);
+
+            // Intentar enviar datos
             try {
                 tg.sendData(JSON.stringify(datos));
-                console.log('✅ tg.sendData ejecutado');
-            } catch (e) {
-                console.error('❌ Error tg.sendData:', e);
-            }
-            
-            // Método 2: tg.close con delay (respaldo)
-            setTimeout(() => {
-                try {
+                console.log('sendData ejecutado');
+                
+                // Cerrar después de un momento
+                setTimeout(() => {
                     tg.close();
-                    console.log('✅ WebApp cerrada');
-                } catch (e) {
-                    console.error('❌ Error cerrando:', e);
-                }
-            }, 300);
+                }, 500);
+                
+            } catch (e) {
+                console.error('Error:', e);
+                alert('Error al enviar. Intenta de nuevo.');
+                btn.disabled = false;
+                btn.textContent = '✅ ENVIAR DESTINO AL BOT';
+            }
         }
     </script>
 </body>
