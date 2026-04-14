@@ -148,25 +148,29 @@
         map.on('moveend', actualizarInfo);
         setTimeout(actualizarInfo, 500);
 
-        // FUNCIÓN CLAVE: Enviar datos al bot
         function enviarDestino() {
-            const btn = document.getElementById('btnConfirm');
-            btn.disabled = true;
-            btn.textContent = '⏳ Enviando...';
-
-            const datos = {
-                user_id: userId,
-                lat: currentLat,
-                lng: currentLng,
-                address: currentAddress
-            };
-
-            console.log('Enviando:', datos);
-
-            // Intentar enviar datos
-            try {
-                tg.sendData(JSON.stringify(datos));
-                console.log('sendData ejecutado');
+    const datos = {
+        user_id: userId,
+        lat: currentLat,
+        lng: currentLng,
+        address: currentAddress
+    };
+    
+    // Método alternativo: Copiar al portapapeles y mostrar instrucciones
+    const texto = `/destino ${currentLat} ${currentLng} ${userId}`;
+    
+    // Intentar sendData primero
+    try {
+        tg.sendData(JSON.stringify(datos));
+    } catch(e) {
+        console.log('sendData falló, usando alternativa');
+    }
+    
+    // Mostrar mensaje al usuario
+    alert('📍 Destino seleccionado!\n\nRegresa al chat y elige "📍 Compartir destino" o escribe el comando mostrado.');
+    
+    tg.close();
+}
                 
                 // Cerrar después de un momento
                 setTimeout(() => {
