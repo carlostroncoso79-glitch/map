@@ -15,7 +15,7 @@
             overflow: hidden;
         }
         #map { 
-            height: calc(100vh - 200px); 
+            height: calc(100vh - 220px); 
             width: 100%;
             z-index: 1;
             margin-top: 50px;
@@ -34,7 +34,7 @@
         }
         .pin-center {
             position: fixed;
-            top: calc(50% - 50px);
+            top: calc(50% - 60px);
             left: 50%;
             transform: translate(-50%, -50%);
             font-size: 45px;
@@ -57,17 +57,15 @@
             border-radius: 8px;
             margin-bottom: 10px;
             font-size: 12px;
-            border-left: 4px solid #0088cc;
         }
         .coords {
             font-family: monospace;
             color: #0088cc;
             font-weight: bold;
-            font-size: 14px;
             text-align: center;
             margin-bottom: 10px;
         }
-        .btn-confirm {
+        .btn-primary {
             width: 100%;
             padding: 16px;
             background: #28a745;
@@ -77,12 +75,17 @@
             font-size: 16px;
             font-weight: bold;
             cursor: pointer;
+            margin-bottom: 10px;
         }
-        .btn-confirm:disabled {
-            background: #ccc;
-        }
-        .loading {
-            color: #0088cc;
+        .btn-secondary {
+            width: 100%;
+            padding: 12px;
+            background: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
         }
     </style>
 </head>
@@ -93,30 +96,26 @@
     <div id="map"></div>
     
     <div class="controls">
-        <div class="info-box" id="address">
-            <span class="loading">Obteniendo dirección...</span>
-        </div>
+        <div class="info-box" id="address">Cargando...</div>
         <div class="coords" id="coords">--</div>
-        <button class="btn-confirm" id="btnConfirm" onclick="enviarDestino()">
+        <button class="btn-primary" onclick="enviarDestino()">
             ✅ ENVIAR DESTINO AL BOT
+        </button>
+        <button class="btn-secondary" onclick="copiarComando()">
+            📋 Copiar comando manual
         </button>
     </div>
 
     <script>
-        // Inicializar Telegram WebApp
         const tg = window.Telegram.WebApp;
         tg.expand();
         tg.ready();
         
-        // Obtener parámetros
         const params = new URLSearchParams(window.location.search);
         const userId = params.get('user_id');
         const originLat = parseFloat(params.get('origin_lat')) || 11.247425;
         const originLng = parseFloat(params.get('origin_lng')) || -74.205316;
 
-        console.log('UserID:', userId);
-
-        // Mapa
         const map = L.map('map', { zoomControl: false, attributionControl: false })
             .setView([originLat, originLng], 16);
 
@@ -138,7 +137,7 @@
                 const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${currentLat}&lon=${currentLng}&zoom=18`);
                 const data = await res.json();
                 currentAddress = data.display_name || 'Ubicación seleccionada';
-                document.getElementById('address').textContent = currentAddress.substring(0, 100) + '...';
+                document.getElementById('address').textContent = currentAddress.substring(0, 80) + '...';
             } catch (e) {
                 currentAddress = `${currentLat.toFixed(5)}, ${currentLng.toFixed(5)}`;
                 document.getElementById('address').textContent = currentAddress;
@@ -148,41 +147,43 @@
         map.on('moveend', actualizarInfo);
         setTimeout(actualizarInfo, 500);
 
+        // MÉTODO 1: Intentar tg.sendData()
         function enviarDestino() {
-    const datos = {
-        user_id: userId,
-        lat: currentLat,
-        lng: currentLng,
-        address: currentAddress
-    };
-    
-    // Método alternativo: Copiar al portapapeles y mostrar instrucciones
-    const texto = `/destino ${currentLat} ${currentLng} ${userId}`;
-    
-    // Intentar sendData primero
-    try {
-        tg.sendData(JSON.stringify(datos));
-    } catch(e) {
-        console.log('sendData falló, usando alternativa');
-    }
-    
-    // Mostrar mensaje al usuario
-    alert('📍 Destino seleccionado!\n\nRegresa al chat y elige "📍 Compartir destino" o escribe el comando mostrado.');
-    
-    tg.close();
-}
+            const datos = {
+                user_id: userId,
+                lat: currentLat,
+                lng: currentLng,
+                address: currentAddress
+            };
+
+            console.log('Enviando:', datos);
+
+            try {
+                tg.sendData(JSON.stringify(datos));
+                console.log('sendData ejecutado');
                 
-                // Cerrar después de un momento
                 setTimeout(() => {
                     tg.close();
                 }, 500);
                 
             } catch (e) {
-                console.error('Error:', e);
-                alert('Error al enviar. Intenta de nuevo.');
-                btn.disabled = false;
-                btn.textContent = '✅ ENVIAR DESTINO AL BOT';
+                console.error('Error sendData:', e);
+                alert('Error al enviar. Usa el botón "Copiar comando manual"');
             }
+        }
+
+        // MÉTODO 2: Copiar comando como respaldo
+        function copiarComando() {
+            const comando = `/destino ${currentLat.toFixed(6)} ${currentLng.toFixed(6)} ${userId}`;
+            
+            // Copiar al portapapeles
+            navigator.clipboard.writeText(comando).then(() => {
+                alert('📋 Comando copiado!\n\nPega este mensaje en el chat del bot:\n\n' + comando);
+                tg.close();
+            }).catch(() => {
+                // Si no se puede copiar, mostrar para copiar manual
+                prompt('Copia este comando y envíalo en el chat:', comando);
+            });
         }
     </script>
 </body>
