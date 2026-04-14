@@ -9,48 +9,56 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: sans-serif; background: #f5f5f5; }
-        #map { height: calc(100vh - 180px); width: 100%; margin-top: 50px; }
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f5f5f5; }
+        #map { height: calc(100vh - 200px); width: 100%; margin-top: 50px; }
         .header {
             background: #0088cc; color: white; padding: 15px;
-            text-align: center; font-weight: bold;
+            text-align: center; font-weight: bold; font-size: 14px;
             position: fixed; top: 0; width: 100%; z-index: 1000;
         }
         .pin-center {
             position: fixed; top: calc(50% - 60px); left: 50%;
-            transform: translate(-50%, -50%); font-size: 40px;
+            transform: translate(-50%, -50%); font-size: 45px;
             z-index: 500; pointer-events: none;
         }
         .controls {
             position: fixed; bottom: 0; left: 0; right: 0;
-            background: white; padding: 15px; z-index: 1000;
+            background: white; padding: 15px; box-shadow: 0 -3px 10px rgba(0,0,0,0.1);
+            z-index: 1000;
         }
         .info-box {
-            padding: 10px; background: #f0f8ff;
-            border-radius: 8px; margin-bottom: 10px; font-size: 12px;
+            padding: 12px; background: #f0f8ff; border-radius: 8px;
+            margin-bottom: 10px; font-size: 12px; min-height: 40px;
+            border-left: 4px solid #0088cc;
         }
         .coords {
-            font-family: monospace; color: #0088cc;
-            text-align: center; margin-bottom: 10px;
+            font-family: monospace; color: #0088cc; font-weight: bold;
+            text-align: center; margin-bottom: 10px; font-size: 14px;
         }
         .btn-confirm {
-            width: 100%; padding: 15px; background: #28a745;
+            width: 100%; padding: 16px; background: #28a745;
             color: white; border: none; border-radius: 10px;
             font-size: 16px; font-weight: bold; cursor: pointer;
+        }
+        .btn-confirm:disabled { background: #ccc; }
+        .error {
+            color: #dc3545; font-size: 12px; text-align: center;
+            margin-top: 5px;
         }
     </style>
 </head>
 <body>
-    <div class="header">📍 Selecciona tu destino</div>
+    <div class="header">📍 Mueve el mapa para seleccionar destino</div>
     <div class="pin-center">📍</div>
     <div id="map"></div>
     
     <div class="controls">
-        <div class="info-box" id="address">Cargando...</div>
+        <div class="info-box" id="address"><span style="color:#666">Cargando...</span></div>
         <div class="coords" id="coords">--</div>
-        <button class="btn-confirm" onclick="enviar()">
-            ✅ ENVIAR DESTINO
+        <button class="btn-confirm" id="btn" onclick="enviarDestino()">
+            ✅ ENVIAR DESTINO AL BOT
         </button>
+        <div class="error" id="error"></div>
     </div>
 
     <script>
@@ -64,6 +72,8 @@
         const originLat = parseFloat(params.get('origin_lat')) || 11.247425;
         const originLng = parseFloat(params.get('origin_lng')) || -74.205316;
 
+        console.log('Params:', { userId, chatId, originLat, originLng });
+
         const map = L.map('map', { zoomControl: false, attributionControl: false })
             .setView([originLat, originLng], 16);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
@@ -72,33 +82,36 @@
         let currentLng = originLng;
         let currentAddress = '';
 
-        async function actualizar() {
+        async function actualizarInfo() {
             const center = map.getCenter();
             currentLat = center.lat;
             currentLng = center.lng;
-            
-            document.getElementById('coords').textContent = 
-                `${currentLat.toFixed(6)}, ${currentLng.toFixed(6)}`;
+            document.getElementById('coords').textContent = `${currentLat.toFixed(6)}, ${currentLng.toFixed(6)}`;
             
             try {
                 const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${currentLat}&lon=${currentLng}&zoom=18`);
                 const data = await res.json();
-                currentAddress = data.display_name || 'Ubicación seleccionada';
-                document.getElementById('address').textContent = currentAddress.substring(0, 100);
+                currentAddress = data.display_name || `${currentLat.toFixed(5)}, ${currentLng.toFixed(5)}`;
+                document.getElementById('address').textContent = currentAddress.substring(0, 80) + '...';
             } catch (e) {
                 currentAddress = `${currentLat.toFixed(5)}, ${currentLng.toFixed(5)}`;
                 document.getElementById('address').textContent = currentAddress;
             }
         }
 
-        map.on('moveend', actualizar);
-        setTimeout(actualizar, 500);
+        map.on('moveend', actualizarInfo);
+        setTimeout(actualizarInfo, 600);
 
-        // Enviar a la Edge Function
-        async function enviar() {
-            const btn = document.querySelector('.btn-confirm');
-            btn.textContent = '⏳ Enviando...';
+        // URL CORREGIDA - telegram-webhook (no telegram-bot)
+        const API_URL = 'https://fsdqvdxvhqauyqczgsfb.supabase.co/functions/v1/telegram-webhook';
+
+        async function enviarDestino() {
+            const btn = document.getElementById('btn');
+            const errorDiv = document.getElementById('error');
+            
             btn.disabled = true;
+            btn.textContent = '⏳ Enviando...';
+            errorDiv.textContent = '';
 
             const datos = {
                 client_id: parseInt(userId),
@@ -108,29 +121,35 @@
                 dest_address: currentAddress
             };
 
-            console.log('Enviando:', datos);
+            console.log('Enviando a:', API_URL);
+            console.log('Datos:', datos);
 
             try {
-                const res = await fetch('https://fsdqvdxvhqauyqczgsfb.supabase.co/functions/v1/telegram-bot', {
+                const res = await fetch(API_URL, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
                     body: JSON.stringify(datos)
                 });
 
+                console.log('Status:', res.status);
                 const result = await res.json();
                 console.log('Respuesta:', result);
 
-                if (result.success) {
-                    btn.textContent = '✅ Enviado!';
-                    setTimeout(() => tg.close(), 1000);
+                if (res.ok && result.success) {
+                    btn.textContent = '✅ ¡Enviado! Revisa el chat.';
+                    setTimeout(() => tg.close(), 2000);
                 } else {
-                    throw new Error(result.error || 'Error');
+                    throw new Error(result.error || `Error ${res.status}`);
                 }
                 
             } catch (e) {
                 console.error('Error:', e);
-                btn.textContent = '❌ Error. Reintentar';
+                errorDiv.textContent = '❌ ' + (e.message || 'Error de conexión');
                 btn.disabled = false;
+                btn.textContent = '🔄 REINTENTAR';
             }
         }
     </script>
