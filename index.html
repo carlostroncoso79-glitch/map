@@ -15,7 +15,7 @@
             overflow: hidden;
         }
         #map { 
-            height: calc(100vh - 200px); 
+            height: calc(100vh - 180px); 
             width: 100%;
             z-index: 1;
             margin-top: 50px;
@@ -78,30 +78,20 @@
             font-weight: bold;
             cursor: pointer;
         }
-        .btn-confirm:disabled {
-            background: #ccc;
-        }
-        .status {
-            text-align: center;
-            font-size: 12px;
-            margin-top: 5px;
-            color: #666;
-        }
     </style>
 </head>
 <body>
-    <div class="header">📍 Selecciona tu destino</div>
+    <div class="header">📍 Mueve el mapa para seleccionar destino</div>
     
     <div class="pin-center">📍</div>
     <div id="map"></div>
     
     <div class="controls">
-        <div class="info-box" id="address">Cargando dirección...</div>
+        <div class="info-box" id="address">Cargando...</div>
         <div class="coords" id="coords">--</div>
-        <button class="btn-confirm" id="btnConfirm" onclick="guardarViaje()">
-            ✅ SOLICITAR VIAJE
+        <button class="btn-confirm" onclick="enviarDestino()">
+            ✅ ENVIAR DESTINO AL BOT
         </button>
-        <div class="status" id="status"></div>
     </div>
 
     <script>
@@ -111,13 +101,10 @@
         
         const params = new URLSearchParams(window.location.search);
         const userId = params.get('user_id');
-        const chatId = params.get('chat_id') || userId;
-        const originLat = parseFloat(params.get('origin_lat'));
-        const originLng = parseFloat(params.get('origin_lng'));
-        const originAddress = params.get('origin_address') || 'Ubicación origen';
+        const originLat = parseFloat(params.get('origin_lat')) || 11.247425;
+        const originLng = parseFloat(params.get('origin_lng')) || -74.205316;
 
-        // URL de tu Edge Function
-        const API_URL = 'https://fsdqvdxvhqauyqczgsfb.supabase.co/functions/v1/guardar-viaje';
+        console.log('UserID:', userId);
 
         const map = L.map('map', { zoomControl: false, attributionControl: false })
             .setView([originLat, originLng], 16);
@@ -150,52 +137,27 @@
         map.on('moveend', actualizarInfo);
         setTimeout(actualizarInfo, 500);
 
-        async function guardarViaje() {
-            const btn = document.getElementById('btnConfirm');
-            const status = document.getElementById('status');
-            
-            btn.disabled = true;
-            btn.textContent = '⏳ Guardando...';
-            status.textContent = 'Creando solicitud de viaje...';
-
+        function enviarDestino() {
             const datos = {
-                client_id: parseInt(userId),
-                chat_id: parseInt(chatId),
-                origin_lat: originLat,
-                origin_lng: originLng,
-                origin_address: originAddress,
-                dest_lat: currentLat,
-                dest_lng: currentLng,
-                dest_address: currentAddress
+                user_id: userId,
+                lat: currentLat,
+                lng: currentLng,
+                address: currentAddress
             };
 
+            console.log('Enviando:', datos);
+
             try {
-                const response = await fetch(API_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(datos)
-                });
-
-                const resultado = await response.json();
-
-                if (resultado.success) {
-                    status.textContent = '✅ ¡Viaje solicitado! Revisa el chat.';
-                    status.style.color = '#28a745';
-                    
-                    setTimeout(() => {
-                        tg.close();
-                    }, 1500);
-                    
-                } else {
-                    throw new Error(resultado.error || 'Error al guardar');
-                }
+                tg.sendData(JSON.stringify(datos));
+                console.log('sendData OK');
                 
-            } catch (error) {
-                console.error('Error:', error);
-                status.textContent = '❌ Error. Intenta de nuevo.';
-                status.style.color = '#dc3545';
-                btn.disabled = false;
-                btn.textContent = '✅ SOLICITAR VIAJE';
+                setTimeout(() => {
+                    tg.close();
+                }, 300);
+                
+            } catch (e) {
+                console.error('Error:', e);
+                alert('Error al enviar. Intenta de nuevo.');
             }
         }
     </script>
