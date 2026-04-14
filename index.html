@@ -69,8 +69,8 @@
         const params = new URLSearchParams(window.location.search);
         const userId = params.get('user_id');
         const chatId = params.get('chat_id');
-        const originLat = parseFloat(params.get('origin_lat')) || 11.247425;
-        const originLng = parseFloat(params.get('origin_lng')) || -74.205316;
+        const originLat = parseFloat(params.get('origin_lat'));
+        const originLng = parseFloat(params.get('origin_lng'));
 
         console.log('Params:', { userId, chatId, originLat, originLng });
 
@@ -102,7 +102,7 @@
         map.on('moveend', actualizarInfo);
         setTimeout(actualizarInfo, 600);
 
-        // URL CORREGIDA - telegram-webhook (no telegram-bot)
+        // URL de la Edge Function
         const API_URL = 'https://fsdqvdxvhqauyqczgsfb.supabase.co/functions/v1/telegram-webhook';
 
         async function enviarDestino() {
@@ -113,16 +113,19 @@
             btn.textContent = '⏳ Enviando...';
             errorDiv.textContent = '';
 
+            // DATOS ENVIADOS A LA EDGE FUNCTION
             const datos = {
                 client_id: parseInt(userId),
                 chat_id: parseInt(chatId),
-                dest_lat: currentLat,
-                dest_lng: currentLng,
-                dest_address: currentAddress
+                origin_lat: originLat,        // ← Origen lat
+                origin_lng: originLng,        // ← Origen lng
+                origin_address: 'Ubicación origen del usuario', // ← Origen dirección
+                dest_lat: currentLat,         // ← Destino lat
+                dest_lng: currentLng,         // ← Destino lng
+                dest_address: currentAddress  // ← Destino dirección
             };
 
-            console.log('Enviando a:', API_URL);
-            console.log('Datos:', datos);
+            console.log('Enviando:', datos);
 
             try {
                 const res = await fetch(API_URL, {
@@ -139,7 +142,7 @@
                 console.log('Respuesta:', result);
 
                 if (res.ok && result.success) {
-                    btn.textContent = '✅ ¡Enviado! Revisa el chat.';
+                    btn.textContent = '✅ ¡Enviado! ID: ' + result.trip_id;
                     setTimeout(() => tg.close(), 2000);
                 } else {
                     throw new Error(result.error || `Error ${res.status}`);
