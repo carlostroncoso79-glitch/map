@@ -15,7 +15,7 @@
             overflow: hidden;
         }
         #map { 
-            height: calc(100vh - 220px); 
+            height: calc(100vh - 200px); 
             width: 100%;
             z-index: 1;
             margin-top: 50px;
@@ -57,6 +57,7 @@
             border-radius: 8px;
             margin-bottom: 10px;
             font-size: 12px;
+            min-height: 40px;
         }
         .coords {
             font-family: monospace;
@@ -64,8 +65,9 @@
             font-weight: bold;
             text-align: center;
             margin-bottom: 10px;
+            font-size: 14px;
         }
-        .btn-primary {
+        .btn-confirm {
             width: 100%;
             padding: 16px;
             background: #28a745;
@@ -75,17 +77,15 @@
             font-size: 16px;
             font-weight: bold;
             cursor: pointer;
-            margin-bottom: 10px;
         }
-        .btn-secondary {
-            width: 100%;
-            padding: 12px;
-            background: #6c757d;
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-size: 14px;
-            cursor: pointer;
+        .btn-confirm:disabled {
+            background: #ccc;
+        }
+        .status {
+            text-align: center;
+            font-size: 12px;
+            margin-top: 5px;
+            color: #666;
         }
     </style>
 </head>
@@ -96,14 +96,12 @@
     <div id="map"></div>
     
     <div class="controls">
-        <div class="info-box" id="address">Cargando...</div>
+        <div class="info-box" id="address">Cargando dirección...</div>
         <div class="coords" id="coords">--</div>
-        <button class="btn-primary" onclick="enviarDestino()">
-            ✅ ENVIAR DESTINO AL BOT
+        <button class="btn-confirm" id="btnConfirm" onclick="guardarViaje()">
+            ✅ SOLICITAR VIAJE
         </button>
-        <button class="btn-secondary" onclick="copiarComando()">
-            📋 Copiar comando manual
-        </button>
+        <div class="status" id="status"></div>
     </div>
 
     <script>
@@ -113,8 +111,13 @@
         
         const params = new URLSearchParams(window.location.search);
         const userId = params.get('user_id');
-        const originLat = parseFloat(params.get('origin_lat')) || 11.247425;
-        const originLng = parseFloat(params.get('origin_lng')) || -74.205316;
+        const chatId = params.get('chat_id') || userId;
+        const originLat = parseFloat(params.get('origin_lat'));
+        const originLng = parseFloat(params.get('origin_lng'));
+        const originAddress = params.get('origin_address') || 'Ubicación origen';
+
+        // URL de tu Edge Function
+        const API_URL = 'https://fsdqvdxvhqauyqczgsfb.supabase.co/functions/v1/guardar-viaje';
 
         const map = L.map('map', { zoomControl: false, attributionControl: false })
             .setView([originLat, originLng], 16);
@@ -137,7 +140,7 @@
                 const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${currentLat}&lon=${currentLng}&zoom=18`);
                 const data = await res.json();
                 currentAddress = data.display_name || 'Ubicación seleccionada';
-                document.getElementById('address').textContent = currentAddress.substring(0, 80) + '...';
+                document.getElementById('address').textContent = currentAddress.substring(0, 100);
             } catch (e) {
                 currentAddress = `${currentLat.toFixed(5)}, ${currentLng.toFixed(5)}`;
                 document.getElementById('address').textContent = currentAddress;
@@ -147,43 +150,53 @@
         map.on('moveend', actualizarInfo);
         setTimeout(actualizarInfo, 500);
 
-        // MÉTODO 1: Intentar tg.sendData()
-        function enviarDestino() {
+        async function guardarViaje() {
+            const btn = document.getElementById('btnConfirm');
+            const status = document.getElementById('status');
+            
+            btn.disabled = true;
+            btn.textContent = '⏳ Guardando...';
+            status.textContent = 'Creando solicitud de viaje...';
+
             const datos = {
-                user_id: userId,
-                lat: currentLat,
-                lng: currentLng,
-                address: currentAddress
+                client_id: parseInt(userId),
+                chat_id: parseInt(chatId),
+                origin_lat: originLat,
+                origin_lng: originLng,
+                origin_address: originAddress,
+                dest_lat: currentLat,
+                dest_lng: currentLng,
+                dest_address: currentAddress
             };
 
-            console.log('Enviando:', datos);
-
             try {
-                tg.sendData(JSON.stringify(datos));
-                console.log('sendData ejecutado');
-                
-                setTimeout(() => {
-                    tg.close();
-                }, 500);
-                
-            } catch (e) {
-                console.error('Error sendData:', e);
-                alert('Error al enviar. Usa el botón "Copiar comando manual"');
-            }
-        }
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(datos)
+                });
 
-        // MÉTODO 2: Copiar comando como respaldo
-        function copiarComando() {
-            const comando = `/destino ${currentLat.toFixed(6)} ${currentLng.toFixed(6)} ${userId}`;
-            
-            // Copiar al portapapeles
-            navigator.clipboard.writeText(comando).then(() => {
-                alert('📋 Comando copiado!\n\nPega este mensaje en el chat del bot:\n\n' + comando);
-                tg.close();
-            }).catch(() => {
-                // Si no se puede copiar, mostrar para copiar manual
-                prompt('Copia este comando y envíalo en el chat:', comando);
-            });
+                const resultado = await response.json();
+
+                if (resultado.success) {
+                    status.textContent = '✅ ¡Viaje solicitado! Revisa el chat.';
+                    status.style.color = '#28a745';
+                    
+                    setTimeout(() => {
+                        tg.close();
+                    }, 1500);
+                    
+                } else {
+                    throw new Error(resultado.error || 'Error al guardar');
+                }
+                
+            } catch (error) {
+                console.error('Error:', error);
+                status.textContent = '❌ Error. Intenta de nuevo.';
+                status.style.color = '#dc3545';
+                btn.disabled = false;
+                btn.textContent = '✅ SOLICITAR VIAJE';
+            }
         }
     </script>
 </body>
